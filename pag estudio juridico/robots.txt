@@ -1,0 +1,5 @@
+# robots.txt para https://www.estudiojuridicoestevez.com/
+User-agent: *
+Allow: /
+
+Sitemap: https://www.estudiojuridicoestevez.com/sitemap.xml

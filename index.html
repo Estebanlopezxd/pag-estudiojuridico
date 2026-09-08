@@ -79,9 +79,9 @@
 <!-- Fuentes cargadas de forma no bloqueante: se piden con baja prioridad (preload)
      y recién se activan como stylesheet cuando ya terminaron de bajar, así no retrasan
      el primer render de la página. font-display=swap ya evita texto invisible mientras tanto. -->
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Poppins:wght@300;400;500&display=swap">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Poppins:wght@300;400;500&display=swap" media="print" onload="this.media='all';this.onload=null;">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Poppins:wght@300;400;500&display=swap"></noscript>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Poppins:wght@300;400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Poppins:wght@300;400;500&display=swap" media="print" onload="this.media='all';this.onload=null;">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Poppins:wght@300;400;500&display=swap"></noscript>
 
 <!-- ===== Schema.org JSON-LD: Attorney / LegalService (datos reales del sitio) ===== -->
 <script type="application/ld+json">
@@ -201,6 +201,9 @@
 <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NVMRX9MC"
 height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <!-- End Google Tag Manager (noscript) -->
+
+<!-- Sentinel invisible para detectar el scroll sin leer window.scrollY (evita reflow forzado) -->
+<div id="scrollSentinel" aria-hidden="true" style="position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none;"></div>
 
 
 <!-- ============ NAV ============ -->
@@ -687,27 +690,36 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <script>
 (function(){
   // ---- Nav scroll state ----
-  // Throttled con requestAnimationFrame y solo escribe en el DOM si el estado
-  // realmente cambió, para evitar reflow forzado en cada evento de scroll.
+  // Usa IntersectionObserver sobre un sentinel invisible en vez de leer
+  // window.scrollY: así nunca se fuerza un recálculo síncrono de layout.
   var nav = document.getElementById('siteNav');
-  var isScrolled = false;
-  var scrollTicking = false;
-  function applyScrollState(){
-    var shouldBeScrolled = window.scrollY > 30;
-    if(shouldBeScrolled !== isScrolled){
-      isScrolled = shouldBeScrolled;
-      nav.classList.toggle('scrolled', isScrolled);
+  var scrollSentinel = document.getElementById('scrollSentinel');
+  if (scrollSentinel && 'IntersectionObserver' in window){
+    var navObserver = new IntersectionObserver(function(entries){
+      nav.classList.toggle('scrolled', !entries[0].isIntersecting);
+    }, {rootMargin: '-30px 0px 0px 0px'});
+    navObserver.observe(scrollSentinel);
+  } else {
+    // Fallback para navegadores muy antiguos sin IntersectionObserver
+    var isScrolled = false;
+    var scrollTicking = false;
+    function applyScrollState(){
+      var shouldBeScrolled = window.scrollY > 30;
+      if(shouldBeScrolled !== isScrolled){
+        isScrolled = shouldBeScrolled;
+        nav.classList.toggle('scrolled', isScrolled);
+      }
+      scrollTicking = false;
     }
-    scrollTicking = false;
-  }
-  function onScroll(){
-    if(!scrollTicking){
-      scrollTicking = true;
-      window.requestAnimationFrame(applyScrollState);
+    function onScroll(){
+      if(!scrollTicking){
+        scrollTicking = true;
+        window.requestAnimationFrame(applyScrollState);
+      }
     }
+    window.addEventListener('scroll', onScroll, {passive:true});
+    window.requestAnimationFrame(applyScrollState);
   }
-  window.addEventListener('scroll', onScroll, {passive:true});
-  window.requestAnimationFrame(applyScrollState);
 
   // ---- Mobile menu ----
   var burger = document.getElementById('burgerBtn');
@@ -867,6 +879,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
 </body>
 </html>
+
 
 
 

@@ -37,8 +37,10 @@
 <!-- Google Search Console (completar cuando exista el código real) -->
 <!-- <meta name="google-site-verification" content="[GOOGLE_SEARCH_CONSOLE_VERIFICATION]"> -->
 
-<!-- Google Tag Manager (carga diferida: se activa recién con la primera interacción
-     del usuario o a los 4s como máximo, para no competir con la carga inicial de la página) -->
+<!-- Google Tag Manager (carga diferida). Se activa con la primera interacción real
+     del usuario (scroll/click/touch), o si no hay interacción, recién después de que
+     la página terminó de cargar y el hilo principal está libre (requestIdleCallback).
+     Así nunca compite por CPU con el pintado del LCP. -->
 <script>
 (function(){
   var gtmLoaded = false;
@@ -51,11 +53,22 @@
     'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
     })(window,document,'script','dataLayer','GTM-NVMRX9MC');
     triggerEvents.forEach(function(evt){ window.removeEventListener(evt, loadGTM); });
-    clearTimeout(fallbackTimer);
   }
   var triggerEvents = ['scroll','mousemove','touchstart','keydown','click'];
   triggerEvents.forEach(function(evt){ window.addEventListener(evt, loadGTM, {passive:true, once:true}); });
-  var fallbackTimer = setTimeout(loadGTM, 4000);
+
+  function scheduleIdleLoad(){
+    if ('requestIdleCallback' in window){
+      window.requestIdleCallback(loadGTM, {timeout: 6000});
+    } else {
+      setTimeout(loadGTM, 4000);
+    }
+  }
+  if (document.readyState === 'complete'){
+    scheduleIdleLoad();
+  } else {
+    window.addEventListener('load', scheduleIdleLoad);
+  }
 })();
 </script>
 <!-- End Google Tag Manager -->
@@ -719,19 +732,29 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   menu.querySelectorAll('a').forEach(function(a){ a.addEventListener('click', closeMenu); });
 
   // ---- Scroll reveal ----
-  var revealEls = document.querySelectorAll('.reveal');
-  if('IntersectionObserver' in window){
-    var io = new IntersectionObserver(function(entries){
-      entries.forEach(function(entry){
-        if(entry.isIntersecting){
-          entry.target.classList.add('in');
-          io.unobserve(entry.target);
-        }
-      });
-    }, {threshold:0.15, rootMargin:'0px 0px -60px 0px'});
-    revealEls.forEach(function(el){ io.observe(el); });
+  // Se difiere con requestIdleCallback: las secciones que animan están fuera
+  // de la pantalla inicial (el hero ya se muestra directo, sin depender de esto),
+  // así que no hace falta que compita por CPU durante el primer pintado.
+  function setupReveal(){
+    var revealEls = document.querySelectorAll('.reveal');
+    if('IntersectionObserver' in window){
+      var io = new IntersectionObserver(function(entries){
+        entries.forEach(function(entry){
+          if(entry.isIntersecting){
+            entry.target.classList.add('in');
+            io.unobserve(entry.target);
+          }
+        });
+      }, {threshold:0.15, rootMargin:'0px 0px -60px 0px'});
+      revealEls.forEach(function(el){ io.observe(el); });
+    } else {
+      revealEls.forEach(function(el){ el.classList.add('in'); });
+    }
+  }
+  if ('requestIdleCallback' in window){
+    window.requestIdleCallback(setupReveal, {timeout: 2000});
   } else {
-    revealEls.forEach(function(el){ el.classList.add('in'); });
+    setTimeout(setupReveal, 300);
   }
 
   // ---- Contact form ----
@@ -789,53 +812,61 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   });
 
   // ---- Conversion tracking (Google Analytics / GTM) ----
-  // [COMPLETAR]: agregar el snippet real de Google Tag Manager / GA4 en el <head>.
-  // Esta función empuja los eventos al dataLayer si GTM/GA ya está instalado;
-  // si todavía no existe, solo los deja registrados en consola (no rompe nada).
+  // Los listeners de tracking se difieren igual que el resto: no son necesarios
+  // para el primer pintado y así no compiten por CPU con el LCP.
   function trackEvent(eventName, params){
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push(Object.assign({event: eventName}, params || {}));
   }
 
-  // click_whatsapp: cualquier link a wa.me
-  document.querySelectorAll('a[href*="wa.me"]').forEach(function(el){
-    el.addEventListener('click', function(){
-      trackEvent('click_whatsapp', {href: el.getAttribute('href')});
+  function setupTracking(){
+    // click_whatsapp: cualquier link a wa.me
+    document.querySelectorAll('a[href*="wa.me"]').forEach(function(el){
+      el.addEventListener('click', function(){
+        trackEvent('click_whatsapp', {href: el.getAttribute('href')});
+      });
     });
-  });
 
-  // click_phone: cualquier link tel:
-  document.querySelectorAll('a[href^="tel:"]').forEach(function(el){
-    el.addEventListener('click', function(){
-      trackEvent('click_phone', {href: el.getAttribute('href')});
+    // click_phone: cualquier link tel:
+    document.querySelectorAll('a[href^="tel:"]').forEach(function(el){
+      el.addEventListener('click', function(){
+        trackEvent('click_phone', {href: el.getAttribute('href')});
+      });
     });
-  });
 
-  // click_email: cualquier link mailto:
-  document.querySelectorAll('a[href^="mailto:"]').forEach(function(el){
-    el.addEventListener('click', function(){
-      trackEvent('click_email', {href: el.getAttribute('href')});
+    // click_email: cualquier link mailto:
+    document.querySelectorAll('a[href^="mailto:"]').forEach(function(el){
+      el.addEventListener('click', function(){
+        trackEvent('click_email', {href: el.getAttribute('href')});
+      });
     });
-  });
 
-  // form_start: primer foco en cualquier campo del formulario de contacto
-  var formStarted = false;
-  form.addEventListener('focusin', function(){
-    if(!formStarted){
-      formStarted = true;
-      trackEvent('form_start', {form_id: 'consultForm'});
-    }
-  });
-
-  // click_cta: botones principales de la página
-  document.querySelectorAll('.btn-gold, .btn-outline').forEach(function(el){
-    el.addEventListener('click', function(){
-      trackEvent('click_cta', {label: el.textContent.trim()});
+    // form_start: primer foco en cualquier campo del formulario de contacto
+    var formStarted = false;
+    form.addEventListener('focusin', function(){
+      if(!formStarted){
+        formStarted = true;
+        trackEvent('form_start', {form_id: 'consultForm'});
+      }
     });
-  });
+
+    // click_cta: botones principales de la página
+    document.querySelectorAll('.btn-gold, .btn-outline').forEach(function(el){
+      el.addEventListener('click', function(){
+        trackEvent('click_cta', {label: el.textContent.trim()});
+      });
+    });
+  }
+  if ('requestIdleCallback' in window){
+    window.requestIdleCallback(setupTracking, {timeout: 3000});
+  } else {
+    setTimeout(setupTracking, 500);
+  }
 })();
 </script>
 
 </body>
 </html>
+
+
 
